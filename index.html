@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mushroom Planets</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #040718; color: #dfe6ff; font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; overflow: hidden; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; cursor: grab; }
+  #stage canvas:active { cursor: grabbing; }
+  .hud { position: fixed; left: 16px; bottom: 14px; max-width: 440px; pointer-events: none; text-shadow: 0 1px 8px #000; }
+  .hud h1 { margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: .02em; color: #aef7ff; }
+  .hud p { margin: 0; opacity: .8; font-size: 12.5px; }
+  .hud kbd { font: 11px ui-monospace, monospace; background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 5px; }
+  #tip { position: fixed; pointer-events: none; padding: 6px 10px; border-radius: 8px; background: rgba(10, 14, 40, .86); border: 1px solid rgba(160, 220, 255, .25); font-size: 12.5px; transform: translate(14px, 14px); display: none; backdrop-filter: blur(6px); }
+  #tip b { color: #aef7ff; }
+  #tip small { opacity: .7; display: block; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #040718; color: #aef7ff; letter-spacing: .1em; transition: opacity .6s; z-index: 5; }
+  .lil-gui { --background-color: rgba(10, 14, 40, .82); --widget-color: rgba(255,255,255,.08); --hover-color: rgba(255,255,255,.14); --focus-color: rgba(174,247,255,.2); --title-background-color: rgba(20, 30, 70, .9); --text-color: #dfe6ff; --number-color: #aef7ff; --string-color: #ffd48a; backdrop-filter: blur(8px); }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="loading">growing mushrooms…</div>
+<div class="hud">
+  <h1 id="title">Mushroom Planet</h1>
+  <p>Drag to orbit · scroll to zoom · click a house to switch its lights · click a villager to chat · click the moss to plant a mushroom.</p>
+  <p><kbd>P</kbd> next planet (or all three) · <kbd>space</kbd> spin · <kbd>R</kbd> new seed · <kbd>S</kbd> save PNG · <kbd>H</kbd> hide panel</p>
+</div>
+<div id="tip"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
+import { createApp, disposeTree } from './lib/app.js';
+import { createPicker } from './lib/picking.js';
+import * as bioluminescent from './scenes/mushroom-planet.js';
+import * as morel from './scenes/morel-planet.js';
+import * as chanterelle from './scenes/chanterelle-planet.js';
+import * as trio from './scenes/trio.js';
+
+// Every scene module exports: id, label, DEFAULTS, RANGES, LOOK, makeSky(), createWorld(params).
+const SCENES = { bioluminescent, morel, chanterelle, trio };
+const DEFAULT_CAMERA = { position: [0.6, 2.8, 10.5], target: [0, 0.1, 0] };
+
+const stage = document.getElementById('stage');
+const tip = document.getElementById('tip');
+const app = createApp({ container: stage, cameraPos: [0.6, 2.8, 10.5] });
+app.controls.target.set(0, 0.1, 0);
+
+const url = new URL(location.href);
+const state = { planet: SCENES[url.searchParams.get('planet')] ? url.searchParams.get('planet') : 'bioluminescent' };
+const look = { bloom: 0.55, bloomRadius: 0.45, exposure: 1.0, keyLight: 1.2, groundGlow: 1.5, spin: 0.06, autoSpin: true };
+let params = {};
+let scene = null;
+let sky = null;
+let world = null;
+
+function applyLook() {
+  app.bloomPass.strength = look.bloom;
+  app.bloomPass.radius = look.bloomRadius;
+  app.renderer.toneMappingExposure = look.exposure;
+  sky?.setMoon(look.keyLight);
+  if (world) world.planet.mesh.material.emissiveIntensity = look.groundGlow;
+}
+
+/** Switch planets: new params, look preset, sky and world. */
+function loadPlanet(id) {
+  scene = SCENES[id];
+  state.planet = id;
+  const seedFromUrl = url.searchParams.get('planet') === id ? url.searchParams.get('seed') : null;
+  params = { ...scene.DEFAULTS, seed: seedFromUrl ?? scene.DEFAULTS.seed };
+  Object.assign(look, {
+    bloom: scene.LOOK.bloom, bloomRadius: scene.LOOK.bloomRadius, exposure: scene.LOOK.exposure,
+    keyLight: scene.LOOK.keyLight, groundGlow: scene.LOOK.groundGlow, spin: scene.LOOK.spin,
+  });
+  app.bloomPass.threshold = scene.LOOK.bloomThreshold;
+  app.scene.background = new THREE.Color(scene.LOOK.background);
+  document.body.style.background = `#${scene.LOOK.background.toString(16).padStart(6, '0')}`;
+  document.getElementById('title').textContent = scene.title ?? `${scene.label} Planet`;
+  if (sky) disposeTree(sky.group);
+  sky = scene.makeSky();
+  app.scene.add(sky.group);
+  build();
+  resetCamera();
+  rebuildWorldFolder();
+  gui.controllersRecursive().forEach((c) => c.updateDisplay());
+}
+
+function build() {
+  if (world) disposeTree(world.group);
+  world = scene.createWorld(params);
+  app.scene.add(world.group);
+  applyLook();
+  url.searchParams.set('planet', state.planet);
+  url.searchParams.set('seed', params.seed);
+  history.replaceState(null, '', url);
+}
+
+app.onTick((dt, t) => {
+  sky?.update(dt, t);
+  world?.update(dt, t);
+  if (world && look.autoSpin) world.group.rotation.y += look.spin * dt;
+});
+
+// --- Interaction -----------------------------------------------------------
+
+const HINTS = {
+  mushroom: (ud) => ud.house ? (ud.lit ? 'click: lights off' : 'click: lights on') : 'click: boing',
+  cluster: () => 'click: boing',
+  villager: () => 'click: say hi',
+  orb: () => 'click: pop',
+  ground: () => 'click: plant a mushroom',
+  cottage: (ud) => ud.lit ? 'click: lights off' : 'click: lights on',
+  lantern: () => 'click: wobble',
+  tree: () => 'click: rustle',
+  prop: () => 'click: wobble',
+};
+
+let hoverObj = null;
+const picker = createPicker({
+  camera: app.camera,
+  dom: app.renderer.domElement,
+  targets: () => world?.pickables ?? [],
+  onHover(hit) {
+    if (hoverObj?.userData.baseEmissive) hoverObj.userData.cap.material.emissiveIntensity = hoverObj.userData.baseEmissive;
+    hoverObj = hit?.object ?? null;
+    if (!hoverObj) { tip.style.display = 'none'; return; }
+    const ud = hoverObj.userData;
+    if (ud.baseEmissive) ud.cap.material.emissiveIntensity = ud.baseEmissive * 1.9;
+    tip.innerHTML = `<b>${ud.name}</b><small>${HINTS[ud.type]?.(ud) ?? ''}</small>`;
+    tip.style.display = 'block';
+  },
+  onClick(hit) {
+    const obj = hit.object, ud = obj.userData;
+    switch (ud.type) {
+      case 'mushroom':
+        if (ud.house) { ud.setLit(!ud.lit); ud.puff?.(); }
+        world.bounce(obj);
+        break;
+      case 'cottage': ud.setLit(!ud.lit); world.bounce(obj); break;
+      case 'villager': ud.say(); break;
+      case 'orb': ud.pop(); break;
+      case 'ground': world.plant(hit.point, obj); break;
+      default: world.bounce(obj);
+    }
+    picker.refresh();
+  },
+});
+app.renderer.domElement.addEventListener('pointermove', (e) => {
+  tip.style.left = `${e.clientX}px`;
+  tip.style.top = `${e.clientY}px`;
+});
+
+// --- Panel -----------------------------------------------------------------
+
+const gui = new GUI({ title: 'mushroom planets', width: 290 });
+const planetOptions = Object.fromEntries(Object.values(SCENES).map((s) => [s.label, s.id]));
+gui.add(state, 'planet', planetOptions).name('🪐 planet').onChange((id) => loadPlanet(id));
+
+const fLook = gui.addFolder('Look');
+fLook.add(look, 'bloom', 0, 3, 0.05).onChange(applyLook);
+fLook.add(look, 'bloomRadius', 0, 1, 0.05).name('bloom radius').onChange(applyLook);
+fLook.add(look, 'exposure', 0.3, 2.5, 0.05).onChange(applyLook);
+fLook.add(look, 'keyLight', 0, 4, 0.1).name('key light').onChange(applyLook);
+fLook.add(look, 'groundGlow', 0, 4, 0.1).name('ground glow').onChange(applyLook);
+fLook.add(look, 'autoSpin').name('auto spin');
+fLook.add(look, 'spin', -0.5, 0.5, 0.01).name('spin speed');
+
+const fActions = gui.addFolder('Actions');
+fActions.add({ png: savePng }, 'png').name('📷 save PNG');
+fActions.add({ reset: resetCamera }, 'reset').name('reset camera');
+fActions.add({ wave: () => world.villagers.forEach((v, i) => setTimeout(() => v.userData.say(), i * 250)) }, 'wave').name('everyone talk');
+
+let fWorld = null;
+function rebuildWorldFolder() {
+  fWorld?.destroy();
+  fWorld = gui.addFolder('World');
+  fWorld.add(params, 'seed').name('seed').onFinishChange(build);
+  for (const [key, [min, max, step, name]] of Object.entries(scene.RANGES)) {
+    fWorld.add(params, key, min, max, step).name(name ?? key).onFinishChange(build);
+  }
+  fWorld.add({ reroll }, 'reroll').name('🎲 new seed');
+  gui.$children.insertBefore(fWorld.domElement, fLook.domElement); // keep World above Look
+}
+
+function reroll() {
+  params.seed = Math.random().toString(36).slice(2, 8);
+  build();
+  gui.controllersRecursive().forEach((c) => c.updateDisplay());
+}
+function savePng() {
+  const a = document.createElement('a');
+  a.href = app.snapshot();
+  a.download = `${state.planet}-planet-${params.seed}.png`;
+  a.click();
+}
+function resetCamera() {
+  const cam = scene.CAMERA ?? DEFAULT_CAMERA;
+  app.camera.position.set(...cam.position);
+  app.controls.target.set(...cam.target);
+  app.controls.update();
+}
+function nextPlanet() {
+  const ids = Object.keys(SCENES);
+  loadPlanet(ids[(ids.indexOf(state.planet) + 1) % ids.length]);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { look.autoSpin = !look.autoSpin; gui.controllersRecursive().forEach((c) => c.updateDisplay()); e.preventDefault(); }
+  if (e.key === 'r' || e.key === 'R') reroll();
+  if (e.key === 's' || e.key === 'S') savePng();
+  if (e.key === 'h' || e.key === 'H') gui.show(gui._hidden);
+  if (e.key === 'p' || e.key === 'P') nextPlanet();
+});
+
+loadPlanet(state.planet);
+app.start();
+requestAnimationFrame(() => {
+  const l = document.getElementById('loading');
+  l.style.opacity = 0;
+  setTimeout(() => l.remove(), 700);
+});
+
+// Handy for poking at things from the console.
+window.scenekit = { app, get sky() { return sky; }, get world() { return world; }, get params() { return params; }, look, state, loadPlanet, THREE };
+</script>
+</body>
+</html>
