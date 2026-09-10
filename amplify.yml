@@ -1,0 +1,14 @@
+# AWS Amplify Hosting: serve the single-file build from dist/.
+# The build regenerates dist/ from the modules, so the deploy never goes stale.
+version: 1
+frontend:
+  phases:
+    build:
+      commands:
+        - python3 tools/build-single.py
+  artifacts:
+    baseDirectory: dist
+    files:
+      - '**/*'
+  cache:
+    paths: []

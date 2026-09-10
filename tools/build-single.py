@@ -5,7 +5,7 @@ Every module under lib/ and scenes/ is embedded as a data: URL in the import
 map (relative imports are rewritten to bare 'sk/...' specifiers), so the page
 needs no other files from this repo. three.js itself still comes from the CDN.
 
-    python3 tools/build-single.py      # writes dist/three-planets.html
+    python3 tools/build-single.py      # writes dist/three-planets.html + dist/index.html
 """
 import base64, pathlib, re, sys
 
@@ -37,4 +37,5 @@ importmap = json.dumps({'imports': imports}, indent=1)
 
 page = (ROOT / 'tools' / 'single.template.html').read_text().replace('/*IMPORTMAP*/', importmap)
 OUT.write_text(page)
+(OUT.parent / 'index.html').write_text(page)  # same page as the site root, for static hosts
 print(f'wrote {OUT.name}: {OUT.stat().st_size // 1024} KB, {len(MODULES)} modules embedded')
