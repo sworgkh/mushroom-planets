@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fold scenekit into one self-contained HTML file showing the three planets.
+"""Fold the project into one self-contained HTML file showing the three planets.
 
 Every module under lib/ and scenes/ is embedded as a data: URL in the import
 map (relative imports are rewritten to bare 'sk/...' specifiers), so the page
