@@ -34,8 +34,9 @@
 <div id="loading">growing mushrooms…</div>
 <div class="hud">
   <h1 id="title">Mushroom Planet</h1>
-  <p>Drag to orbit · scroll to zoom · click a house to switch its lights · click a villager to chat · click the moss to plant a mushroom.</p>
-  <p><kbd>P</kbd> next planet (or all three) · <kbd>space</kbd> spin · <kbd>R</kbd> new seed · <kbd>S</kbd> save PNG · <kbd>H</kbd> hide panel</p>
+  <p>Drag to look around · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Q</kbd><kbd>E</kbd> down / up · hold <kbd>shift</kbd> to go faster · scroll to change speed.</p>
+  <p>Click a house to switch its lights · click a villager to chat · click the moss to plant a mushroom.</p>
+  <p><kbd>P</kbd> next planet (or all three) · <kbd>space</kbd> spin · <kbd>R</kbd> new seed · <kbd>C</kbd> save PNG · <kbd>H</kbd> hide panel</p>
 </div>
 <div id="tip"></div>
 
@@ -55,8 +56,7 @@ const DEFAULT_CAMERA = { position: [0.6, 2.8, 10.5], target: [0, 0.1, 0] };
 
 const stage = document.getElementById('stage');
 const tip = document.getElementById('tip');
-const app = createApp({ container: stage, cameraPos: [0.6, 2.8, 10.5] });
-app.controls.target.set(0, 0.1, 0);
+const app = createApp({ container: stage, cameraPos: DEFAULT_CAMERA.position, cameraTarget: DEFAULT_CAMERA.target });
 
 const url = new URL(location.href);
 const state = { planet: SCENES[url.searchParams.get('planet')] ? url.searchParams.get('planet') : 'bioluminescent' };
@@ -180,6 +180,7 @@ fLook.add(look, 'spin', -0.5, 0.5, 0.01).name('spin speed');
 const fActions = gui.addFolder('Actions');
 fActions.add({ png: savePng }, 'png').name('📷 save PNG');
 fActions.add({ reset: resetCamera }, 'reset').name('reset camera');
+fActions.add(app.controls.state, 'speed', 0.25, 60, 0.25).name('fly speed').listen();
 fActions.add({ wave: () => world.villagers.forEach((v, i) => setTimeout(() => v.userData.say(), i * 250)) }, 'wave').name('everyone talk');
 
 let fWorld = null;
@@ -207,9 +208,7 @@ function savePng() {
 }
 function resetCamera() {
   const cam = scene.CAMERA ?? DEFAULT_CAMERA;
-  app.camera.position.set(...cam.position);
-  app.controls.target.set(...cam.target);
-  app.controls.update();
+  app.controls.setView(cam.position, cam.target);
 }
 function nextPlanet() {
   const ids = Object.keys(SCENES);
@@ -220,7 +219,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if (e.code === 'Space') { look.autoSpin = !look.autoSpin; gui.controllersRecursive().forEach((c) => c.updateDisplay()); e.preventDefault(); }
   if (e.key === 'r' || e.key === 'R') reroll();
-  if (e.key === 's' || e.key === 'S') savePng();
+  if (e.key === 'c' || e.key === 'C') savePng();
   if (e.key === 'h' || e.key === 'H') gui.show(gui._hidden);
   if (e.key === 'p' || e.key === 'P') nextPlanet();
 });

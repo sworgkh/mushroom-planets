@@ -34,8 +34,9 @@
 <button id="gear" title="settings (H)" aria-label="settings">⚙</button>
 <div class="hud">
   <h1>Three Mushroom Planets</h1>
-  <p>Drag to orbit · scroll to zoom · click a house to switch its lights · click a villager to chat · click the moss to plant a mushroom.</p>
-  <p><kbd>space</kbd> spin · <kbd>R</kbd> new seed · <kbd>S</kbd> save PNG · <kbd>H</kbd> settings</p>
+  <p>Drag to look around · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Q</kbd><kbd>E</kbd> down / up · hold <kbd>shift</kbd> to go faster · scroll to change speed.</p>
+  <p>Click a house to switch its lights · click a villager to chat · click the moss to plant a mushroom.</p>
+  <p><kbd>space</kbd> spin · <kbd>R</kbd> new seed · <kbd>C</kbd> save PNG · <kbd>H</kbd> settings</p>
 </div>
 <div id="tip"></div>
 
@@ -48,9 +49,7 @@ import * as scene from 'sk/scenes/trio.js';
 
 const stage = document.getElementById('stage');
 const tip = document.getElementById('tip');
-const app = createApp({ container: stage, cameraPos: scene.CAMERA.position, background: scene.LOOK.background });
-app.controls.target.set(...scene.CAMERA.target);
-app.controls.update();
+const app = createApp({ container: stage, cameraPos: scene.CAMERA.position, cameraTarget: scene.CAMERA.target, background: scene.LOOK.background });
 app.bloomPass.threshold = scene.LOOK.bloomThreshold;
 
 const url = new URL(location.href);
@@ -154,6 +153,7 @@ fLook.add(look, 'spin', -0.5, 0.5, 0.01).name('spin speed');
 const fActions = gui.addFolder('Actions');
 fActions.add({ png: savePng }, 'png').name('📷 save PNG');
 fActions.add({ reset: resetCamera }, 'reset').name('reset camera');
+fActions.add(app.controls.state, 'speed', 0.25, 60, 0.25).name('fly speed').listen();
 fActions.add({ wave: () => world.villagers.forEach((v, i) => setTimeout(() => v.userData.say(), i * 250)) }, 'wave').name('everyone talk');
 
 const gear = document.getElementById('gear');
@@ -177,16 +177,14 @@ function savePng() {
   a.click();
 }
 function resetCamera() {
-  app.camera.position.set(...scene.CAMERA.position);
-  app.controls.target.set(...scene.CAMERA.target);
-  app.controls.update();
+  app.controls.setView(scene.CAMERA.position, scene.CAMERA.target);
 }
 
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if (e.code === 'Space') { look.autoSpin = !look.autoSpin; gui.controllersRecursive().forEach((c) => c.updateDisplay()); e.preventDefault(); }
   if (e.key === 'r' || e.key === 'R') reroll();
-  if (e.key === 's' || e.key === 'S') savePng();
+  if (e.key === 'c' || e.key === 'C') savePng();
   if (e.key === 'h' || e.key === 'H') toggleSettings();
 });
 
